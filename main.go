@@ -8,7 +8,6 @@ import (
 )
 
 func main() {
-
 	conf, err := config.Get()
 	if err != nil {
 		log.Println(err)

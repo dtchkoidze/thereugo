@@ -1,66 +1,9 @@
-import initWebsocket from "./procedures/initWebsocket.js";
-window.addEventListener("DOMContentLoaded", function () {
-	console.log("JavaScript loaded");
-	initWebsocket();
+import Socket from "./modules/socket.js";
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+window.addEventListener("DOMContentLoaded", async function () {
 	/**
-	 * Els
+	 * DOM Els
 	 */
-	const generateButton = document.querySelector("#codeGenerator");
 	const connectButton = document.querySelector("#codeInputer");
 	const sendFileButton = document.querySelector("#sendFileButton");
 	const fileInput = document.querySelector("#fileInput");
@@ -69,60 +12,107 @@ window.addEventListener("DOMContentLoaded", function () {
 	const receivedContainer = document.querySelector("#received");
 	const fileInputContainer = document.querySelector("#fileInputContainer");
 
-	/**
-	 * Other vars
-	 */
-
-	let peer = new Peer();
-	let conn = {};
-	let incomingFileInfo = null;
-	let incomingFileData = null;
-	let receivedSize = 0;
-	let receiveBuffer = [];
-
-	peer.on("open", function (id) {
-		console.log("My ID is:", id);
-		generatedCodeField.value = id;
-	});
-
-	peer.on("connection", function (conn) {
-		handleConn(conn);
-	});
-
-	/**
-	 * Listeners
-	 */
-	connectButton.addEventListener("click", connect);
-	sendFileButton.addEventListener("click", sendFile);
-
-	function connect(evt) {
-		console.log("Connecting...");
-		const code = inputedCodeField.value;
-		console.log("To peer with code: ", code);
-		conn = peer.connect(code);
-		conn.on("open", function () {
-			showDataExchangeDOM();
-			conn.on("data", function (data) {
-				handleReceivedData(data);
-			});
-		});
+	const socket = new Socket();
+	if (!(await socket.checkAvailability())) {
+		console.warn("websocket is not available in window");
+		return;
 	}
+	const protocol = window.location.protocol;
+	const host = window.location.host;
+	const prefix = protocol == "http:" ? "ws:" : "wss:";
+	const localId =
+		Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+	await socket.createWebsocket(`${prefix}//${host}/ws?id=${localId}`);
 
-	/**
-	 * Global peer events
-	 */
+	let remoteId = "";
+	generatedCodeField.value = localId;
 
+	const peerConnection = new RTCPeerConnection();
+	let dataChannel = null;
+
+	peerConnection.onicecandidate = (e) => {
+		if (e.candidate) {
+			socket.sendJSONString({
+				to: remoteId,
+				from: localId,
+				type: "iceCandidate",
+				data: e.candidate,
+			});
+		}
+	};
+
+	peerConnection.ondatachannel = (event) => {
+		dataChannel = event.channel;
+		dataChannel.onopen = () => console.log("Data channel open");
+		dataChannel.onmessage = (evt) => {
+			let msg = JSON.parse(evt.data);
+			handleReceivedData(msg);
+		};
+	};
+
+	socket.webSocketObject.onmessage = (evt) => {
+		const message = JSON.parse(evt.data);
+		if (message.from === localId) return;
+		switch (message.type) {
+			case "offer":
+				remoteId = message.from;
+				peerConnection
+					.setRemoteDescription(message.data)
+					.then(() => peerConnection.createAnswer())
+					.then((answer) => peerConnection.setLocalDescription(answer))
+					.then(() =>
+						socket.sendJSONString({
+							to: remoteId,
+							from: localId,
+							type: "answer",
+							data: peerConnection.localDescription,
+						}),
+					)
+					.catch(console.error);
+				break;
+			case "answer":
+				peerConnection.setRemoteDescription(message.data).catch(console.error);
+				break;
+			case "iceCandidate":
+				peerConnection.addIceCandidate(message.data).catch(console.error);
+				break;
+			default:
+				handleReceivedData(message);
+				break;
+		}
+	};
+
+	connectButton.addEventListener("click", () => {
+		remoteId = inputedCodeField.value.trim();
+		dataChannel = peerConnection.createDataChannel("fileExchange");
+		dataChannel.onopen = () => console.log("Data channel open");
+		dataChannel.onmessage = (evt) => {
+			let msg = JSON.parse(evt.data);
+			handleReceivedData(msg);
+		};
+		peerConnection
+			.createOffer()
+			.then((offer) => peerConnection.setLocalDescription(offer))
+			.then(() =>
+				socket.sendJSONString({
+					to: remoteId,
+					from: localId,
+					type: "offer",
+					data: peerConnection.localDescription,
+				}),
+			)
+			.catch(console.error);
+		showDataExchangeDOM();
+	});
+
+	sendFileButton.addEventListener("click", sendFile);
 	function sendFile() {
 		console.log("sendFile called");
-
-		// Check if we have an open connection
-		if (!conn || conn.dataChannel.readyState !== "open") {
+		if (!dataChannel || dataChannel.readyState !== "open") {
 			console.error("No open connection available");
 			return;
 		}
 
-		// Get the file from the file input
-		const fileInput = document.querySelector("#fileInput");
 		const file = fileInput.files[0];
 
 		if (!file) {
@@ -133,100 +123,83 @@ window.addEventListener("DOMContentLoaded", function () {
 		console.log(
 			`Sending file: ${file.name} (${file.type}, ${file.size} bytes)`,
 		);
+		dataChannel.send(
+			JSON.stringify({
+				dataType: "FILE_META",
+				fileName: file.name,
+				fileType: file.type,
+				fileSize: file.size,
+			}),
+		);
 
-		// First, send file metadata
-		conn.send({
-			dataType: "FILE_META",
-			fileName: file.name,
-			fileType: file.type,
-			fileSize: file.size,
-		});
-
-		// Then send the file in chunks
-		const chunkSize = 16384; // 16KB chunks
+		const chunkSize = 16384;  
 		let offset = 0;
-
 		const reader = new FileReader();
 
 		reader.onload = function (event) {
-			// Send this chunk
-			conn.send({
-				dataType: "FILE_CHUNK",
-				chunk: new Uint8Array(event.target.result),
-				offset: offset,
-			});
-
-			offset += event.target.result.byteLength;
-
-			// Calculate and display progress
-			const progress = Math.min(100, Math.round((offset / file.size) * 100));
-			console.log(`Sending progress: ${progress}%`);
-
-			// If there's more to send, read the next chunk
-			if (offset < file.size) {
-				readSlice(offset);
+			if (dataChannel.bufferedAmount < chunkSize) {
+				setTimeout(() => {
+					const arr = Array.from(new Uint8Array(event.target.result));
+					dataChannel.send(
+						JSON.stringify({
+							dataType: "FILE_CHUNK",
+							chunk: arr,
+							offset: offset,
+						}),
+					);
+					offset += event.target.result.byteLength;
+					const progress = Math.min(
+						100,
+						Math.round((offset / file.size) * 100),
+					);
+					console.log(`Sending progress: ${progress}%`);
+					if (offset < file.size) {
+						readSlice(offset);
+					} else {
+						dataChannel.send(JSON.stringify({ dataType: "FILE_COMPLETE" }));
+						console.log("File sent completely");
+					}
+				}, 300);  
 			} else {
-				// All chunks sent, send completion message
-				conn.send({
-					dataType: "FILE_COMPLETE",
-				});
-				console.log("File sent completely");
+				const arr = Array.from(new Uint8Array(event.target.result));
+				dataChannel.send(
+					JSON.stringify({
+						dataType: "FILE_CHUNK",
+						chunk: arr,
+						offset: offset,
+					}),
+				);
+				offset += event.target.result.byteLength;
+				const progress = Math.min(100, Math.round((offset / file.size) * 100));
+				console.log(`Sending progress: ${progress}%`);
+				if (offset < file.size) {
+					readSlice(offset);
+				} else {
+					dataChannel.send(JSON.stringify({ dataType: "FILE_COMPLETE" }));
+					console.log("File sent completely");
+				}
 			}
 		};
 
-		reader.onerror = function (error) {
-			console.error("Error reading file:", error);
-		};
+		reader.onerror = (error) => console.error("Error reading file:", error);
 
 		function readSlice(o) {
 			const slice = file.slice(o, o + chunkSize);
 			reader.readAsArrayBuffer(slice);
 		}
 
-		// Start reading the first slice
 		readSlice(0);
 	}
 
-	function formatBytes(bytes, decimals = 2) {
-		if (bytes === 0) return "0 Bytes";
-
-		const k = 1024;
-		const dm = decimals < 0 ? 0 : decimals;
-		const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
-	}
-
-	function handleConn(c) {
-		conn = c;
-		conn.on("open", function () {
-			showDataExchangeDOM();
-			conn.on("data", function (data) {
-				handleReceivedData(data);
-			});
-
-			conn.send("Hello!");
-		});
-	}
-
-	function showDataExchangeDOM() {
-		fileInputContainer.style.visibility = "visible";
-		sendFileButton.removeAttribute("disabled");
-	}
-
+	let incomingFileInfo = null,
+		receiveBuffer = [],
+		receivedSize = 0;
 	function handleReceivedData(data) {
-		console.log("data received: ", data);
-		console.log("Received data type:", data.dataType);
-
+		console.log("Received data:", data);
 		if (data.dataType === "FILE_META") {
-			// New file transfer starting
 			console.log(
 				`Receiving file: ${data.fileName} (${data.fileType}, ${data.fileSize} bytes)`,
 			);
-
-			// Reset our file reception variables
 			incomingFileInfo = {
 				name: data.fileName,
 				type: data.fileType,
@@ -234,95 +207,65 @@ window.addEventListener("DOMContentLoaded", function () {
 			};
 			receiveBuffer = [];
 			receivedSize = 0;
-
-			// Update UI to show we're receiving a file
 			updateReceiveProgress(0);
 		} else if (data.dataType === "FILE_CHUNK") {
-			// Ensure we're expecting a file
 			if (!incomingFileInfo) {
-				console.error("Received file chunk but no file metadata");
+				console.error("Received file chunk but no metadata");
 				return;
 			}
-
-			// Add this chunk to our buffer
-			receiveBuffer.push(data.chunk);
-			receivedSize += data.chunk.byteLength;
-
-			// Update progress
+			const chunk = new Uint8Array(data.chunk);
+			receiveBuffer.push(chunk);
+			receivedSize += chunk.byteLength;
 			const percentComplete = Math.min(
 				100,
 				Math.round((receivedSize / incomingFileInfo.size) * 100),
 			);
 			updateReceiveProgress(percentComplete);
 		} else if (data.dataType === "FILE_COMPLETE") {
-			// Make sure we have file info
 			if (!incomingFileInfo) {
-				console.error("Received file complete but no file metadata");
+				console.error("Received file complete but no metadata");
 				return;
 			}
-
-			// Check if we got all the data
 			if (receivedSize === incomingFileInfo.size) {
-				// Create a blob from all chunks
 				const fileBlob = new Blob(receiveBuffer, {
 					type: incomingFileInfo.type,
 				});
-
-				// Create download container
 				createDownloadLink(
 					fileBlob,
 					incomingFileInfo.name,
 					incomingFileInfo.type,
 					receivedSize,
 				);
-
-				// Reset for next file
 				incomingFileInfo = null;
 				receiveBuffer = [];
 				receivedSize = 0;
-
 				console.log("File received completely");
 			} else {
 				console.warn(
 					`File size mismatch. Expected: ${incomingFileInfo.size}, Got: ${receivedSize}`,
 				);
 			}
-		} else if (data.dataType === "FILE") {
-			// Handle single-chunk files (your original format)
-			const fileBlob = new Blob([data.file], { type: data.fileType });
-			createDownloadLink(
-				fileBlob,
-				data.fileName,
-				data.fileType,
-				data.file.length,
-			);
 		}
 	}
 
 	function updateReceiveProgress(percent) {
 		console.log(`Receive progress: ${percent}%`);
-
-		// Update UI with progress
 		const progressElement =
 			document.getElementById("receiveProgress") || createProgressElement();
 		progressElement.value = percent;
 		progressElement.textContent = `${percent}%`;
 	}
 
-	// Create a progress element if needed
 	function createProgressElement() {
 		const progressElement = document.createElement("progress");
 		progressElement.id = "receiveProgress";
 		progressElement.max = 100;
-
 		const progressLabel = document.createElement("span");
 		progressLabel.textContent = "Receiving file:";
-
 		const container = document.createElement("div");
 		container.className = "progress-container";
 		container.appendChild(progressLabel);
 		container.appendChild(progressElement);
-
 		receivedContainer.appendChild(container);
 		return progressElement;
 	}
@@ -330,40 +273,14 @@ window.addEventListener("DOMContentLoaded", function () {
 	function createDownloadLink(fileBlob, fileName, fileType, fileSize) {
 		const downloadContainer = document.createElement("div");
 		downloadContainer.className = "download-item";
-
 		const downloadLink = document.createElement("a");
 		downloadLink.href = URL.createObjectURL(fileBlob);
 		downloadLink.download = fileName;
 		downloadLink.textContent = `Download: ${fileName}`;
 		downloadLink.className = "download-link";
-
 		const fileInfo = document.createElement("div");
 		fileInfo.className = "file-info";
-		fileInfo.textContent = `${fileType} - ${formatBytes(fileSize)}`;
-
-		const iconElement = document.createElement("span");
-		iconElement.className = "file-icon";
-
-		if (fileType.startsWith("image/")) {
-			iconElement.textContent = "🖼️";
-
-			if (fileSize < 5000000) {
-				const preview = document.createElement("img");
-				preview.src = URL.createObjectURL(fileBlob);
-				preview.className = "file-preview";
-				preview.alt = fileName;
-				downloadContainer.appendChild(preview);
-			}
-		} else if (fileType.startsWith("audio/")) {
-			iconElement.textContent = "🔊";
-		} else if (fileType.startsWith("video/")) {
-			iconElement.textContent = "🎬";
-		} else if (fileType === "application/pdf") {
-			iconElement.textContent = "📄";
-		} else {
-			iconElement.textContent = "📁";
-		}
-
+		fileInfo.textContent = `${fileType} - ${fileSize} bytes`;
 		const deleteButton = document.createElement("button");
 		deleteButton.textContent = "🗑️";
 		deleteButton.className = "delete-button";
@@ -371,17 +288,16 @@ window.addEventListener("DOMContentLoaded", function () {
 			downloadContainer.remove();
 			URL.revokeObjectURL(downloadLink.href);
 		};
-
-		downloadContainer.appendChild(iconElement);
-		downloadContainer.appendChild(downloadLink);
-		downloadContainer.appendChild(fileInfo);
-		downloadContainer.appendChild(deleteButton);
-
+		downloadContainer.append(downloadLink, fileInfo, deleteButton);
 		const progressElement = document.getElementById("receiveProgress");
 		if (progressElement && progressElement.parentNode) {
 			progressElement.parentNode.remove();
 		}
-
 		receivedContainer.appendChild(downloadContainer);
+	}
+
+	function showDataExchangeDOM() {
+		fileInputContainer.style.visibility = "visible";
+		sendFileButton.removeAttribute("disabled");
 	}
 });

@@ -56,7 +56,7 @@ export default class Socket {
 
 	async setUpListeners() {
 		// OPEN
-		this.webSocketObject.onopen = (evt) => this.handleOpen();
+		this.webSocketObject.onopen = (evt) => this.handleOpen(evt);
 
 		// MESSAGE
 		this.webSocketObject.onmessage = (evt) => this.handleMessage(evt);
@@ -65,23 +65,22 @@ export default class Socket {
 		this.webSocketObject.onerror = (evt) => this.handleError(evt);
 
 		// CLOSE
-		this.webSocketObject.onclose = (evt) => this.handleClose();
+		this.webSocketObject.onclose = (evt) => this.handleClose(evt);
 	}
 
-	startPing() {
-		this.pingInterval = setInterval(() => {
-			this.sendJSONString({ type: "ping" });
-		}, 30000);
-	}
+	// startPing() {
+	// 	this.pingInterval = setInterval(() => {
+	// 		this.sendJSONString({ type: "ping" });
+	// 	}, 30000);
+	// }
 
-	endPing() {
-		clearInterval(this.pingInterval);
-		this.handleClose(evt);
-	}
+	// endPing() {
+	// 	clearInterval(this.pingInterval);
+	// }
 
 	async handleOpen(evt) {
 		console.log("ws conn established");
-		this.startPing();
+		// this.startPing();
 	}
 
 	async handleMessage(evt) {
@@ -93,7 +92,7 @@ export default class Socket {
 	}
 
 	async handleClose(evt) {
-		this.endPing();
+		// this.endPing();
 		this.closeConn();
 	}
 

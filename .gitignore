@@ -1,4 +1,3 @@
-# Go build artifacts
 /bin/
 /build/
 /dist/
@@ -8,29 +7,22 @@
 *.so
 *.dylib
 
-# OS crap
 .DS_Store
 Thumbs.db
 
-# Dependency directories
 /vendor/
 
-# Go mod cache (sometimes useful to exclude)
 **/go.sum
 
-# IDE/editor stuff
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Logs
 *.log
 
-# Local settings / env
 .env
 .env.*
 
-# Web build outputs (if using bundlers like Vite/Webpack)
 ui/static/dist/
 node_modules/
