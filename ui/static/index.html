@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>ThereUGO</title>
+		<link rel="stylesheet" href="css/app.css" />
+		<script type="module" src="js/app.js"></script>
+        <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+	</head>
+	<body>
+		<h1>Welcome to thereUGO</h1>
+		<p>
+			You can input the secret code or generate one, we'll let u know when the
+			conn is established
+		</p>
+		<section>
+			<button id="codeGenerator">Generate</button>
+		</section>
+		<section>
+			<input type="text" id="generatedCode" />
+		</section>
+		<section>OR</section>
+		<section>
+			<input type="text" id="inputedCode" />
+			<button id="codeInputer">Join</button>
+		</section>
+        <section>
+            <div id="received">
+
+            </div>
+        </section>
+		<section style="visibility: hidden" id="fileInputContainer">
+			<input type="file" id="fileInput" />
+			<button id="sendFileButton" disabled>Send File</button>
+		</section>
+	</body>
+</html>
