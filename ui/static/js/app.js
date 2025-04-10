@@ -1,5 +1,61 @@
+import initWebsocket from "./procedures/initWebsocket.js";
 window.addEventListener("DOMContentLoaded", function () {
 	console.log("JavaScript loaded");
+	initWebsocket();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	/**
 	 * Els
@@ -260,7 +316,7 @@ window.addEventListener("DOMContentLoaded", function () {
 		progressElement.max = 100;
 
 		const progressLabel = document.createElement("span");
-		progressLabel.textContent = "Receiving file: 0%";
+		progressLabel.textContent = "Receiving file:";
 
 		const container = document.createElement("div");
 		container.className = "progress-container";
@@ -313,7 +369,7 @@ window.addEventListener("DOMContentLoaded", function () {
 		deleteButton.className = "delete-button";
 		deleteButton.onclick = function () {
 			downloadContainer.remove();
-			URL.revokeObjectURL(downloadLink.href);  
+			URL.revokeObjectURL(downloadLink.href);
 		};
 
 		downloadContainer.appendChild(iconElement);
